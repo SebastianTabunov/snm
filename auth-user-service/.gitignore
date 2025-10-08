@@ -1,0 +1,14 @@
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+
+# Go
+/bin/
+/auth-service
+
+# Environment
+.env
+*.local
