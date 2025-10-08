@@ -41,10 +41,12 @@ func (r *repository) GetOrder(orderID, userID int) (*Order, error) {
 		&order.ID, &order.UserID, &order.Title, &order.Description,
 		&order.Price, &order.Status, &order.CreatedAt, &order.UpdatedAt,
 	)
-	if err != nil {
-		return nil, err
+
+	if err == sql.ErrNoRows {
+		return nil, nil
 	}
-	return &order, nil
+
+	return &order, err
 }
 
 func (r *repository) CreateOrder(order *Order) (int, error) {
@@ -69,7 +71,12 @@ func (r *repository) GetUserOrders(userID int) ([]Order, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		err := rows.Close()
+		if err != nil {
+			
+		}
+	}(rows)
 
 	var orders []Order
 	for rows.Next() {

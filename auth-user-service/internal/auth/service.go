@@ -2,6 +2,8 @@ package auth
 
 import (
 	"errors"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 type Service interface {
@@ -33,19 +35,13 @@ func (s *service) Register(email, password string) (string, error) {
 		return "", errors.New("user already exists")
 	}
 
-	// Хеширование пароля
-	passwordHash, err := s.repo.HashPassword(password)
+	// Создаем пользователя
+	userID, err := s.repo.CreateUser(email, password)
 	if err != nil {
 		return "", err
 	}
 
-	// Создание пользователя
-	userID, err := s.repo.CreateUser(email, passwordHash)
-	if err != nil {
-		return "", err
-	}
-
-	// Генерация JWT токена
+	// Генерируем JWT токен
 	token, err := s.jwtManager.GenerateToken(userID, email)
 	if err != nil {
 		return "", err
@@ -55,18 +51,22 @@ func (s *service) Register(email, password string) (string, error) {
 }
 
 func (s *service) Login(email, password string) (string, error) {
-	// Получение пользователя
+	// Получаем пользователя
 	user, err := s.repo.GetUserByEmail(email)
 	if err != nil {
 		return "", errors.New("invalid credentials")
 	}
-
-	// Проверка пароля
-	if !s.repo.VerifyPassword(user.PasswordHash, password) {
+	if user == nil {
 		return "", errors.New("invalid credentials")
 	}
 
-	// Генерация JWT токена
+	// Проверяем пароль
+	err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password))
+	if err != nil {
+		return "", errors.New("invalid credentials")
+	}
+
+	// Генерируем JWT токен
 	token, err := s.jwtManager.GenerateToken(user.ID, email)
 	if err != nil {
 		return "", err
@@ -78,12 +78,15 @@ func (s *service) Login(email, password string) (string, error) {
 func (s *service) ValidateToken(token string) (*User, error) {
 	claims, err := s.jwtManager.ValidateToken(token)
 	if err != nil {
-		return nil, err
+		return nil, errors.New("invalid token")
 	}
 
 	// Получаем пользователя из БД для проверки
 	user, err := s.repo.GetUserByID(claims.UserID)
 	if err != nil {
+		return nil, errors.New("user not found")
+	}
+	if user == nil {
 		return nil, errors.New("user not found")
 	}
 

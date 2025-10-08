@@ -23,64 +23,78 @@ type CreateOrderRequest struct {
 }
 
 func (h *Handler) GetOrder(w http.ResponseWriter, r *http.Request) {
-	userID := 1 // Заглушка - в реальности из контекста
+	userID := 1 // Заглушка
 
 	orderIDStr := chi.URLParam(r, "id")
 	orderID, err := strconv.Atoi(orderIDStr)
 	if err != nil {
-		http.Error(w, "Invalid order ID", http.StatusBadRequest)
+		http.Error(w, `{"error": "Invalid order ID"}`, http.StatusBadRequest)
 		return
 	}
 
 	order, err := h.service.GetOrder(orderID, userID)
 	if err != nil {
-		http.Error(w, "Order not found", http.StatusNotFound)
+		http.Error(w, `{"error": "Failed to get order"}`, http.StatusInternalServerError)
+		return
+	}
+
+	if order == nil {
+		http.Error(w, `{"error": "Order not found"}`, http.StatusNotFound)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(order)
+	err = json.NewEncoder(w).Encode(order)
+	if err != nil {
+		return
+	}
 }
 
 func (h *Handler) CreateOrder(w http.ResponseWriter, r *http.Request) {
-	userID := 1 // Заглушка - в реальности из контекста
+	userID := 1 // Заглушка
 
 	var req CreateOrderRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request", http.StatusBadRequest)
+		http.Error(w, `{"error": "Invalid request"}`, http.StatusBadRequest)
 		return
 	}
 
 	if req.Title == "" {
-		http.Error(w, "Title is required", http.StatusBadRequest)
+		http.Error(w, `{"error": "Title is required"}`, http.StatusBadRequest)
 		return
 	}
 
 	if req.Price <= 0 {
-		http.Error(w, "Price must be positive", http.StatusBadRequest)
+		http.Error(w, `{"error": "Price must be positive"}`, http.StatusBadRequest)
 		return
 	}
 
 	order, err := h.service.CreateOrder(userID, req.Title, req.Description, req.Price)
 	if err != nil {
-		http.Error(w, "Failed to create order", http.StatusInternalServerError)
+		http.Error(w, `{"error": "Failed to create order"}`, http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(order)
+	err = json.NewEncoder(w).Encode(order)
+	if err != nil {
+		return
+	}
 }
 
 func (h *Handler) GetUserOrders(w http.ResponseWriter, r *http.Request) {
-	userID := 1 // Заглушка - в реальности из контекста
+	userID := 1 // Заглушка
 
 	orders, err := h.service.GetUserOrders(userID)
 	if err != nil {
-		http.Error(w, "Failed to get orders", http.StatusInternalServerError)
+		http.Error(w, `{"error": "Failed to get orders"}`, http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(orders)
+	err = json.NewEncoder(w).Encode(orders)
+	if err != nil {
+		return
+	}
 }
