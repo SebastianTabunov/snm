@@ -8,7 +8,21 @@
 # Go
 /bin/
 /auth-service
+*.exe
+*.test
+*.out
+/coverage.txt
+/go-build/
 
 # Environment
 .env
-*.local
+*.local.idea/
+
+# Логи
+*.log
+
+# Dependency directories
+vendor/
+
+# Runtime data
+tmp/
