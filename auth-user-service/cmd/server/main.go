@@ -1,14 +1,17 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"auth-user-service/internal/auth"
 	"auth-user-service/internal/database"
 	"auth-user-service/internal/order"
+	"auth-user-service/internal/redis"
 	"auth-user-service/internal/user"
 
 	"github.com/go-chi/chi/v5"
@@ -40,13 +43,31 @@ func main() {
 
 	log.Println("✅ Database connected successfully")
 
-	// Инициализация сервисов с реальной БД
+	// Подключаемся к Redis
+	redisURL := getEnv("REDIS_URL", "redis://localhost:6379/0")
+	var redisClient *redis.Client
+	redisClient, err = redis.NewClient(redisURL)
+	if err != nil {
+		log.Printf("⚠️ Failed to connect to Redis: %v", err)
+		log.Println("⚠️ Continuing without Redis...")
+		redisClient = nil
+	} else {
+		defer func(redisClient *redis.Client) {
+			err := redisClient.Close()
+			if err != nil {
+
+			}
+		}(redisClient)
+		log.Println("✅ Redis connected successfully")
+	}
+
+	// Инициализация сервисов
 	authRepo := auth.NewRepository(db)
 	authService := auth.NewService(authRepo, getEnv("JWT_SECRET", "fallback-secret-key"))
 	authHandler := auth.NewHandler(authService)
 
 	userRepo := user.NewRepository(db)
-	userService := user.NewService(userRepo)
+	userService := user.NewService(userRepo, redisClient) // Передаем Redis
 	userHandler := user.NewHandler(userService)
 
 	orderRepo := order.NewRepository(db)
@@ -74,9 +95,28 @@ func main() {
 		r.Post("/orders", orderHandler.CreateOrder)
 	})
 
-	// Health check
+	// Health check (проверяем все подключения)
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
-		_, err2 := w.Write([]byte("✅ OK"))
+		// Проверяем PostgreSQL
+		if err := db.Ping(); err != nil {
+			http.Error(w, "Database unavailable", http.StatusServiceUnavailable)
+			return
+		}
+
+		// Проверяем Redis если подключен
+		if redisClient != nil {
+			ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+			defer cancel()
+
+			// Простая проверка Redis
+			testKey := "health_check"
+			if err := redisClient.Set(ctx, testKey, "test", 1*time.Second); err != nil {
+				http.Error(w, "Redis unavailable", http.StatusServiceUnavailable)
+				return
+			}
+		}
+
+		_, err2 := w.Write([]byte("✅ OK - All services connected"))
 		if err2 != nil {
 			return
 		}
