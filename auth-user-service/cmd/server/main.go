@@ -7,24 +7,29 @@ import (
 	"os"
 
 	"auth-user-service/internal/auth"
+	"auth-user-service/internal/database"
 	"auth-user-service/internal/order"
 	"auth-user-service/internal/user"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
-	_ "github.com/lib/pq"
 )
 
 func main() {
-	// Получение переменных окружения
-	dbURL := getEnv("DATABASE_URL", "postgres://postgres:password@localhost:5432/auth_service?sslmode=disable")
-	jwtSecret := getEnv("JWT_SECRET", "super-secret-jwt-key-2024")
-	port := getEnv("PORT", "8080")
+	// Конфигурация БД
+	dbConfig := database.Config{
+		Host:     getEnv("DB_HOST", "localhost"),
+		Port:     getEnv("DB_PORT", "5432"),
+		User:     getEnv("DB_USER", "user"),
+		Password: getEnv("DB_PASSWORD", "pass"),
+		DBName:   getEnv("DB_NAME", "auth_service"),
+		SSLMode:  getEnv("DB_SSLMODE", "disable"),
+	}
 
-	// Подключение к БД
-	db, err := sql.Open("postgres", dbURL)
+	// Подключаемся к PostgreSQL
+	db, err := database.NewConnection(dbConfig)
 	if err != nil {
-		log.Fatal("Failed to connect to database:", err)
+		log.Fatalf("❌ Failed to connect to database: %v", err)
 	}
 	defer func(db *sql.DB) {
 		err := db.Close()
@@ -33,39 +38,20 @@ func main() {
 		}
 	}(db)
 
-	if err := db.Ping(); err != nil {
-		log.Printf("⚠️ Database connection failed: %v", err)
-		log.Println("⚠️ Starting without database...")
-		// Продолжаем без БД для тестирования
-		db = nil
-	} else {
-		log.Println("✅ Database connected successfully")
-	}
+	log.Println("✅ Database connected successfully")
 
-	// Инициализация сервисов
-	var authHandler *auth.Handler
-	var userHandler *user.Handler
-	var orderHandler *order.Handler
+	// Инициализация сервисов с реальной БД
+	authRepo := auth.NewRepository(db)
+	authService := auth.NewService(authRepo, getEnv("JWT_SECRET", "fallback-secret-key"))
+	authHandler := auth.NewHandler(authService)
 
-	if db != nil {
-		// Реальные реализации с БД
-		authRepo := auth.NewRepository(db)
-		authService := auth.NewService(authRepo, jwtSecret)
-		authHandler = auth.NewHandler(authService)
+	userRepo := user.NewRepository(db)
+	userService := user.NewService(userRepo)
+	userHandler := user.NewHandler(userService)
 
-		userRepo := user.NewRepository(db)
-		userService := user.NewService(userRepo)
-		userHandler = user.NewHandler(userService)
-
-		orderRepo := order.NewRepository(db)
-		orderService := order.NewService(orderRepo)
-		orderHandler = order.NewHandler(orderService)
-	} else {
-		// Заглушки для тестирования без БД
-		authHandler = &auth.Handler{}
-		userHandler = &user.Handler{}
-		orderHandler = &order.Handler{}
-	}
+	orderRepo := order.NewRepository(db)
+	orderService := order.NewService(orderRepo)
+	orderHandler := order.NewHandler(orderService)
 
 	// Роутер
 	r := chi.NewRouter()
@@ -78,15 +64,11 @@ func main() {
 
 	// Protected routes
 	r.Route("/api", func(r chi.Router) {
-		if db != nil {
-			r.Use(authHandler.AuthMiddleware)
-		}
+		r.Use(authHandler.AuthMiddleware)
 
-		// User routes
 		r.Get("/user/profile", userHandler.GetProfile)
 		r.Put("/user/profile", userHandler.UpdateProfile)
 
-		// Order routes
 		r.Get("/orders", orderHandler.GetUserOrders)
 		r.Get("/orders/{id}", orderHandler.GetOrder)
 		r.Post("/orders", orderHandler.CreateOrder)
@@ -100,7 +82,9 @@ func main() {
 		}
 	})
 
+	port := getEnv("PORT", "8080")
 	log.Printf("🚀 Server starting on :%s", port)
+
 	if err := http.ListenAndServe(":"+port, r); err != nil {
 		log.Fatal("Server failed:", err)
 	}

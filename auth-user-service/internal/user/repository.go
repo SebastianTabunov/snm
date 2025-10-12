@@ -8,7 +8,6 @@ import (
 type Repository interface {
 	GetProfile(userID int) (*Profile, error)
 	UpdateProfile(userID int, profile *Profile) error
-	CreateProfile(userID int, email string) error
 }
 
 type repository struct {
@@ -33,7 +32,8 @@ type Profile struct {
 func (r *repository) GetProfile(userID int) (*Profile, error) {
 	var profile Profile
 	err := r.db.QueryRow(
-		`SELECT u.id, u.email, p.first_name, p.last_name, p.phone, p.address, u.created_at, p.updated_at 
+		`SELECT u.id, u.email, COALESCE(p.first_name, ''), COALESCE(p.last_name, ''), 
+		 COALESCE(p.phone, ''), COALESCE(p.address, ''), u.created_at, COALESCE(p.updated_at, u.created_at)
 		 FROM users u 
 		 LEFT JOIN user_profiles p ON u.id = p.id 
 		 WHERE u.id = $1`,
@@ -46,8 +46,11 @@ func (r *repository) GetProfile(userID int) (*Profile, error) {
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
+	if err != nil {
+		return nil, err
+	}
 
-	return &profile, err
+	return &profile, nil
 }
 
 func (r *repository) UpdateProfile(userID int, profile *Profile) error {
@@ -79,13 +82,5 @@ func (r *repository) UpdateProfile(userID int, profile *Profile) error {
 		)
 	}
 
-	return err
-}
-
-func (r *repository) CreateProfile(userID int, email string) error {
-	_, err := r.db.Exec(
-		`INSERT INTO user_profiles (id) VALUES ($1)`,
-		userID,
-	)
 	return err
 }

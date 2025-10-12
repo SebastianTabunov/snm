@@ -45,8 +45,11 @@ func (r *repository) GetOrder(orderID, userID int) (*Order, error) {
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
+	if err != nil {
+		return nil, err
+	}
 
-	return &order, err
+	return &order, nil
 }
 
 func (r *repository) CreateOrder(order *Order) (int, error) {
@@ -54,9 +57,10 @@ func (r *repository) CreateOrder(order *Order) (int, error) {
 	err := r.db.QueryRow(
 		`INSERT INTO orders (user_id, title, description, price, status) 
 		 VALUES ($1, $2, $3, $4, $5) 
-		 RETURNING id`,
+		 RETURNING id, created_at, updated_at`,
 		order.UserID, order.Title, order.Description, order.Price, "pending",
-	).Scan(&id)
+	).Scan(&id, &order.CreatedAt, &order.UpdatedAt)
+
 	return id, err
 }
 
@@ -74,7 +78,7 @@ func (r *repository) GetUserOrders(userID int) ([]Order, error) {
 	defer func(rows *sql.Rows) {
 		err := rows.Close()
 		if err != nil {
-			
+
 		}
 	}(rows)
 

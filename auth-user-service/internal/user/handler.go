@@ -3,6 +3,8 @@ package user
 import (
 	"encoding/json"
 	"net/http"
+
+	"auth-user-service/internal/auth"
 )
 
 type Handler struct {
@@ -21,9 +23,11 @@ type UpdateProfileRequest struct {
 }
 
 func (h *Handler) GetProfile(w http.ResponseWriter, r *http.Request) {
-	// В реальном приложении userID берется из контекста после аутентификации
-	// Сейчас используем заглушку для тестирования
-	userID := 1
+	userID, ok := auth.GetUserIDFromContext(r.Context())
+	if !ok {
+		http.Error(w, `{"error": "User not authenticated"}`, http.StatusUnauthorized)
+		return
+	}
 
 	profile, err := h.service.GetProfile(userID)
 	if err != nil {
@@ -32,8 +36,18 @@ func (h *Handler) GetProfile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if profile == nil {
-		http.Error(w, `{"error": "Profile not found"}`, http.StatusNotFound)
-		return
+		// Получаем email пользователя из контекста
+		if user, ok := auth.GetUserFromContext(r.Context()); ok {
+			profile = &Profile{
+				ID:    userID,
+				Email: user.Email,
+			}
+		} else {
+			profile = &Profile{
+				ID:    userID,
+				Email: "unknown@example.com",
+			}
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -44,7 +58,11 @@ func (h *Handler) GetProfile(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
-	userID := 1 // Заглушка
+	userID, ok := auth.GetUserIDFromContext(r.Context())
+	if !ok {
+		http.Error(w, `{"error": "User not authenticated"}`, http.StatusUnauthorized)
+		return
+	}
 
 	var req UpdateProfileRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

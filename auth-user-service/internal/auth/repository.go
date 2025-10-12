@@ -2,34 +2,43 @@ package auth
 
 import (
 	"database/sql"
+	"errors"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
 )
 
+// Repository интерфейс - определяем контракт
 type Repository interface {
 	CreateUser(email, password string) (int, error)
 	GetUserByEmail(email string) (*User, error)
 	GetUserByID(id int) (*User, error)
 	UserExists(email string) (bool, error)
+	SaveRefreshToken(userID int, token string, expiresAt time.Time) error
+	GetUserByRefreshToken(token string) (*User, error)
+	DeleteRefreshToken(token string) error
 }
 
-type repository struct {
+// PostgreSQL реализация
+type postgresRepository struct {
 	db *sql.DB
 }
 
-func NewRepository(db *sql.DB) Repository {
-	return &repository{db: db}
-}
-
+// User представляет пользователя системы
 type User struct {
 	ID           int       `json:"id"`
 	Email        string    `json:"email"`
 	PasswordHash string    `json:"-"`
 	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
-func (r *repository) CreateUser(email, password string) (int, error) {
+func NewRepository(db *sql.DB) Repository {
+	return &postgresRepository{db: db}
+}
+
+func (r *postgresRepository) CreateUser(email, password string) (int, error) {
+	// Хешируем пароль
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return 0, err
@@ -41,42 +50,88 @@ func (r *repository) CreateUser(email, password string) (int, error) {
 		email, string(hashedPassword),
 	).Scan(&id)
 
-	return id, err
+	if err != nil {
+		return 0, err
+	}
+
+	return id, nil
 }
 
-func (r *repository) GetUserByEmail(email string) (*User, error) {
+func (r *postgresRepository) GetUserByEmail(email string) (*User, error) {
 	var user User
 	err := r.db.QueryRow(
-		"SELECT id, email, password_hash, created_at FROM users WHERE email = $1",
+		"SELECT id, email, password_hash, created_at, updated_at FROM users WHERE email = $1",
 		email,
-	).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.CreatedAt)
+	).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.CreatedAt, &user.UpdatedAt)
 
-	if err == sql.ErrNoRows {
-		return nil, nil
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, errors.New("user not found")
+	}
+	if err != nil {
+		return nil, err
 	}
 
-	return &user, err
+	return &user, nil
 }
 
-func (r *repository) GetUserByID(id int) (*User, error) {
+func (r *postgresRepository) GetUserByID(id int) (*User, error) {
 	var user User
 	err := r.db.QueryRow(
-		"SELECT id, email, password_hash, created_at FROM users WHERE id = $1",
+		"SELECT id, email, password_hash, created_at, updated_at FROM users WHERE id = $1",
 		id,
-	).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.CreatedAt)
+	).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.CreatedAt, &user.UpdatedAt)
 
-	if err == sql.ErrNoRows {
-		return nil, nil
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, errors.New("user not found")
+	}
+	if err != nil {
+		return nil, err
 	}
 
-	return &user, err
+	return &user, nil
 }
 
-func (r *repository) UserExists(email string) (bool, error) {
+func (r *postgresRepository) UserExists(email string) (bool, error) {
 	var exists bool
 	err := r.db.QueryRow(
 		"SELECT EXISTS(SELECT 1 FROM users WHERE email = $1)",
 		email,
 	).Scan(&exists)
 	return exists, err
+}
+
+func (r *postgresRepository) SaveRefreshToken(userID int, token string, expiresAt time.Time) error {
+	_, err := r.db.Exec(
+		"INSERT INTO auth_tokens (user_id, token, expires_at) VALUES ($1, $2, $3)",
+		userID, token, expiresAt,
+	)
+	return err
+}
+
+func (r *postgresRepository) GetUserByRefreshToken(token string) (*User, error) {
+	var user User
+	err := r.db.QueryRow(
+		`SELECT u.id, u.email, u.password_hash, u.created_at, u.updated_at 
+		 FROM users u 
+		 JOIN auth_tokens t ON u.id = t.user_id 
+		 WHERE t.token = $1 AND t.expires_at > $2`,
+		token, time.Now(),
+	).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.CreatedAt, &user.UpdatedAt)
+
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, errors.New("invalid or expired refresh token")
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return &user, nil
+}
+
+func (r *postgresRepository) DeleteRefreshToken(token string) error {
+	_, err := r.db.Exec(
+		"DELETE FROM auth_tokens WHERE token = $1",
+		token,
+	)
+	return err
 }

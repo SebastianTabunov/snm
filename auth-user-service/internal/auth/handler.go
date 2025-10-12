@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -53,9 +54,17 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Получаем пользователя чтобы получить его ID
+	user, err := h.service.ValidateToken(token)
+	if err != nil {
+		http.Error(w, `{"error": "Failed to get user data"}`, http.StatusInternalServerError)
+		return
+	}
+
 	response := AuthResponse{
 		Token: token,
 		Email: req.Email,
+		ID:    user.ID, // Реальный ID из БД
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -83,9 +92,17 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Получаем пользователя чтобы получить его ID
+	user, err := h.service.ValidateToken(token)
+	if err != nil {
+		http.Error(w, `{"error": "Failed to get user data"}`, http.StatusInternalServerError)
+		return
+	}
+
 	response := AuthResponse{
 		Token: token,
 		Email: req.Email,
+		ID:    user.ID, // Реальный ID из БД
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -109,13 +126,14 @@ func (h *Handler) AuthMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		_, err := h.service.ValidateToken(token)
+		user, err := h.service.ValidateToken(token)
 		if err != nil {
 			http.Error(w, `{"error": "Invalid token"}`, http.StatusUnauthorized)
 			return
 		}
 
-		// Токен валиден, пропускаем запрос
-		next.ServeHTTP(w, r)
+		// Добавляем user в контекст
+		ctx := context.WithValue(r.Context(), userContextKey, user)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

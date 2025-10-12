@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"strconv"
 
+	"auth-user-service/internal/auth"
+
 	"github.com/go-chi/chi/v5"
 )
 
@@ -23,7 +25,11 @@ type CreateOrderRequest struct {
 }
 
 func (h *Handler) GetOrder(w http.ResponseWriter, r *http.Request) {
-	userID := 1 // Заглушка
+	userID, ok := auth.GetUserIDFromContext(r.Context())
+	if !ok {
+		http.Error(w, `{"error": "User not authenticated"}`, http.StatusUnauthorized)
+		return
+	}
 
 	orderIDStr := chi.URLParam(r, "id")
 	orderID, err := strconv.Atoi(orderIDStr)
@@ -51,7 +57,11 @@ func (h *Handler) GetOrder(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) CreateOrder(w http.ResponseWriter, r *http.Request) {
-	userID := 1 // Заглушка
+	userID, ok := auth.GetUserIDFromContext(r.Context())
+	if !ok {
+		http.Error(w, `{"error": "User not authenticated"}`, http.StatusUnauthorized)
+		return
+	}
 
 	var req CreateOrderRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -84,7 +94,11 @@ func (h *Handler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) GetUserOrders(w http.ResponseWriter, r *http.Request) {
-	userID := 1 // Заглушка
+	userID, ok := auth.GetUserIDFromContext(r.Context())
+	if !ok {
+		http.Error(w, `{"error": "User not authenticated"}`, http.StatusUnauthorized)
+		return
+	}
 
 	orders, err := h.service.GetUserOrders(userID)
 	if err != nil {
