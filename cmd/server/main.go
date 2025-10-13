@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"auth-user-service/internal/auth"
@@ -34,7 +36,12 @@ func main() {
 	if err != nil {
 		log.Fatalf("❌ Failed to connect to database: %v", err)
 	}
-	defer db.Close()
+	defer func(db *sql.DB) {
+		err := db.Close()
+		if err != nil {
+
+		}
+	}(db)
 
 	log.Println("✅ Database connected successfully")
 
@@ -47,7 +54,12 @@ func main() {
 		log.Println("⚠️ Continuing without Redis...")
 		redisClient = nil
 	} else {
-		defer redisClient.Close()
+		defer func(redisClient *redis.Client) {
+			err := redisClient.Close()
+			if err != nil {
+
+			}
+		}(redisClient)
 		log.Println("✅ Redis connected successfully")
 	}
 
@@ -67,18 +79,21 @@ func main() {
 	// Роутер
 	r := chi.NewRouter()
 
-	// CORS middleware - критически важно для Тилды!
+	// CORS middleware - оптимизировано для Tilda
 	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{"*"}, // Для тестов, потом заменить на домен Тилды
-		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
-		ExposedHeaders:   []string{"Link"},
-		AllowCredentials: false,
+		// Разрешаем основные домены Tilda + локальная разработка
+		AllowedOrigins:   getCORSAllowedOrigins(),
+		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token", "X-Requested-With", "Origin", "Cache-Control"},
+		ExposedHeaders:   []string{"Link", "Content-Length", "X-Total-Count"},
+		AllowCredentials: true, // Важно для работы с куками/сессиями
 		MaxAge:           300,
 	}))
 
+	// Базовые middleware
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
+	r.Use(middleware.RealIP)
 
 	// Public routes
 	r.Post("/auth/register", authHandler.Register)
@@ -98,6 +113,29 @@ func main() {
 		r.Get("/orders", orderHandler.GetUserOrders)
 		r.Get("/orders/{id}", orderHandler.GetOrder)
 		r.Post("/orders", orderHandler.CreateOrder)
+	})
+
+	// Специальные эндпоинты для Tilda
+	r.Route("/tilda", func(r chi.Router) {
+		// Webhook для Tilda
+		r.Post("/webhook", func(w http.ResponseWriter, r *http.Request) {
+			// Обработка вебхуков от Tilda
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, err := w.Write([]byte(`{"status":"ok"}`))
+			if err != nil {
+				return
+			}
+		})
+
+		// Health check для Tilda
+		r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, err2 := w.Write([]byte(`{"status":"ok","service":"auth-user-service"}`))
+			if err2 != nil {
+				return
+			}
+		})
 	})
 
 	// Health check
@@ -120,7 +158,16 @@ func main() {
 			}
 		}
 
-		w.Write([]byte("✅ OK - All services connected"))
+		w.Header().Set("Content-Type", "application/json")
+		_, err2 := w.Write([]byte(`{"status":"ok","database":"connected","redis":"connected"}`))
+		if err2 != nil {
+			return
+		}
+	})
+
+	// Preflight handler для всех OPTIONS запросов
+	r.Options("/*", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
 	})
 
 	port := getEnv("PORT", "8080")
@@ -136,4 +183,25 @@ func getEnv(key, defaultValue string) string {
 		return value
 	}
 	return defaultValue
+}
+
+// getCORSAllowedOrigins возвращает список разрешенных доменов для CORS
+func getCORSAllowedOrigins() []string {
+	corsOrigins := getEnv("CORS_ALLOWED_ORIGINS", "")
+	if corsOrigins == "" {
+		// По умолчанию разрешаем локальную разработку и основные домены Tilda
+		return []string{
+			"http://localhost:3000",
+			"http://localhost:8080",
+			"https://localhost:3000",
+			"https://localhost:8080",
+			"https://*.tilda.ws",
+			"https://*.tilda.com",
+			"https://tilda.ws",
+			"https://tilda.com",
+		}
+	}
+
+	// Разбиваем строку из переменной окружения
+	return strings.Split(corsOrigins, ",")
 }

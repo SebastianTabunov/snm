@@ -1,4 +1,3 @@
-# Build stage
 FROM golang:1.25-alpine AS builder
 
 WORKDIR /app
@@ -16,14 +15,14 @@ COPY . .
 # Install migrate
 RUN go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
 
-# Build application
+# Build application - ИСПРАВЛЕНО для cmd/server/
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o auth-service ./cmd/server
 
 # Runtime stage
 FROM alpine:latest
 
 # Install postgres client and ca-certificates
-RUN apk --no-cache add postgresql-client ca-certificates
+RUN apk --no-cache add postgresql-client ca-certificates wget
 
 WORKDIR /app
 

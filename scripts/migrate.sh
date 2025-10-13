@@ -11,18 +11,22 @@ fi
 echo "📊 Using database: $DB_HOST:$DB_PORT/$DB_NAME"
 
 # Ждем пока PostgreSQL запустится
-for i in $(seq 1 10); do
+for i in $(seq 1 30); do  # Увеличил до 30 попыток
   if pg_isready -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER"; then
     echo "✅ Database is ready!"
     break
   fi
-  echo "⏳ Waiting for database... ($i/10)"
+  echo "⏳ Waiting for database... ($i/30)"
   sleep 2
 done
 
 # Проверяем окончательно
 if ! pg_isready -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER"; then
-  echo "❌ Database connection failed after 20 seconds"
+  echo "❌ Database connection failed after 60 seconds"
+  echo "🔍 Debug info:"
+  echo "DB_HOST: $DB_HOST"
+  echo "DB_PORT: $DB_PORT"
+  echo "DB_USER: $DB_USER"
   exit 1
 fi
 
