@@ -5,8 +5,6 @@ import (
 	"net/http"
 	"strconv"
 
-	"auth-user-service/internal/auth"
-
 	"github.com/go-chi/chi/v5"
 )
 
@@ -25,7 +23,7 @@ type CreateOrderRequest struct {
 }
 
 func (h *Handler) GetOrder(w http.ResponseWriter, r *http.Request) {
-	userID, ok := auth.GetUserIDFromContext(r.Context())
+	userID, ok := r.Context().Value("userID").(int)
 	if !ok {
 		http.Error(w, `{"error": "User not authenticated"}`, http.StatusUnauthorized)
 		return
@@ -57,7 +55,7 @@ func (h *Handler) GetOrder(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) CreateOrder(w http.ResponseWriter, r *http.Request) {
-	userID, ok := auth.GetUserIDFromContext(r.Context())
+	userID, ok := r.Context().Value("userID").(int)
 	if !ok {
 		http.Error(w, `{"error": "User not authenticated"}`, http.StatusUnauthorized)
 		return
@@ -94,7 +92,7 @@ func (h *Handler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) GetUserOrders(w http.ResponseWriter, r *http.Request) {
-	userID, ok := auth.GetUserIDFromContext(r.Context())
+	userID, ok := r.Context().Value("userID").(int)
 	if !ok {
 		http.Error(w, `{"error": "User not authenticated"}`, http.StatusUnauthorized)
 		return

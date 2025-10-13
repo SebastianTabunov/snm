@@ -4,13 +4,11 @@ import (
 	"database/sql"
 	"errors"
 	"time"
-
-	"golang.org/x/crypto/bcrypt"
 )
 
 // Repository интерфейс - определяем контракт
 type Repository interface {
-	CreateUser(email, password string) (int, error)
+	CreateUser(email, passwordHash, firstName, lastName string) (int, error)
 	GetUserByEmail(email string) (*User, error)
 	GetUserByID(id int) (*User, error)
 	UserExists(email string) (bool, error)
@@ -29,6 +27,8 @@ type User struct {
 	ID           int       `json:"id"`
 	Email        string    `json:"email"`
 	PasswordHash string    `json:"-"`
+	FirstName    string    `json:"first_name,omitempty"`
+	LastName     string    `json:"last_name,omitempty"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
 }
@@ -37,17 +37,12 @@ func NewRepository(db *sql.DB) Repository {
 	return &postgresRepository{db: db}
 }
 
-func (r *postgresRepository) CreateUser(email, password string) (int, error) {
-	// Хешируем пароль
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	if err != nil {
-		return 0, err
-	}
-
+func (r *postgresRepository) CreateUser(email, passwordHash, firstName, lastName string) (int, error) {
+	// Пароль УЖЕ захеширован в сервисе, просто сохраняем его
 	var id int
-	err = r.db.QueryRow(
-		"INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING id",
-		email, string(hashedPassword),
+	err := r.db.QueryRow(
+		"INSERT INTO users (email, password_hash, first_name, last_name) VALUES ($1, $2, $3, $4) RETURNING id",
+		email, passwordHash, firstName, lastName,
 	).Scan(&id)
 
 	if err != nil {
@@ -60,9 +55,9 @@ func (r *postgresRepository) CreateUser(email, password string) (int, error) {
 func (r *postgresRepository) GetUserByEmail(email string) (*User, error) {
 	var user User
 	err := r.db.QueryRow(
-		"SELECT id, email, password_hash, created_at, updated_at FROM users WHERE email = $1",
+		"SELECT id, email, password_hash, first_name, last_name, created_at, updated_at FROM users WHERE email = $1",
 		email,
-	).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.CreatedAt, &user.UpdatedAt)
+	).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.FirstName, &user.LastName, &user.CreatedAt, &user.UpdatedAt)
 
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, errors.New("user not found")
@@ -77,9 +72,9 @@ func (r *postgresRepository) GetUserByEmail(email string) (*User, error) {
 func (r *postgresRepository) GetUserByID(id int) (*User, error) {
 	var user User
 	err := r.db.QueryRow(
-		"SELECT id, email, password_hash, created_at, updated_at FROM users WHERE id = $1",
+		"SELECT id, email, password_hash, first_name, last_name, created_at, updated_at FROM users WHERE id = $1",
 		id,
-	).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.CreatedAt, &user.UpdatedAt)
+	).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.FirstName, &user.LastName, &user.CreatedAt, &user.UpdatedAt)
 
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, errors.New("user not found")
@@ -111,12 +106,12 @@ func (r *postgresRepository) SaveRefreshToken(userID int, token string, expiresA
 func (r *postgresRepository) GetUserByRefreshToken(token string) (*User, error) {
 	var user User
 	err := r.db.QueryRow(
-		`SELECT u.id, u.email, u.password_hash, u.created_at, u.updated_at 
+		`SELECT u.id, u.email, u.password_hash, u.first_name, u.last_name, u.created_at, u.updated_at 
 		 FROM users u 
 		 JOIN auth_tokens t ON u.id = t.user_id 
 		 WHERE t.token = $1 AND t.expires_at > $2`,
 		token, time.Now(),
-	).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.CreatedAt, &user.UpdatedAt)
+	).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.FirstName, &user.LastName, &user.CreatedAt, &user.UpdatedAt)
 
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, errors.New("invalid or expired refresh token")

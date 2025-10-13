@@ -1,7 +1,9 @@
 version: '3.8'
 services:
   app:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
     ports:
       - "8080:8080"
     environment:
@@ -14,12 +16,18 @@ services:
       - DB_SSLMODE=disable
       - JWT_SECRET=your-super-secret-jwt-key-here
       - REDIS_URL=redis://redis:6379/0
+      - PORT=8080
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_healthy
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   db:
     image: postgres:15
@@ -28,7 +36,7 @@ services:
       - POSTGRES_USER=user
       - POSTGRES_PASSWORD=pass
     ports:
-      - "5432:5432"    # ← ДОБАВЛЕНО ПРОБРОС ПОРТА
+      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped

@@ -3,8 +3,6 @@ package user
 import (
 	"encoding/json"
 	"net/http"
-
-	"auth-user-service/internal/auth"
 )
 
 type Handler struct {
@@ -23,7 +21,7 @@ type UpdateProfileRequest struct {
 }
 
 func (h *Handler) GetProfile(w http.ResponseWriter, r *http.Request) {
-	userID, ok := auth.GetUserIDFromContext(r.Context())
+	userID, ok := r.Context().Value("userID").(int)
 	if !ok {
 		http.Error(w, `{"error": "User not authenticated"}`, http.StatusUnauthorized)
 		return
@@ -37,16 +35,10 @@ func (h *Handler) GetProfile(w http.ResponseWriter, r *http.Request) {
 
 	if profile == nil {
 		// Получаем email пользователя из контекста
-		if user, ok := auth.GetUserFromContext(r.Context()); ok {
-			profile = &Profile{
-				ID:    userID,
-				Email: user.Email,
-			}
-		} else {
-			profile = &Profile{
-				ID:    userID,
-				Email: "unknown@example.com",
-			}
+		email, _ := r.Context().Value("userEmail").(string)
+		profile = &Profile{
+			ID:    userID,
+			Email: email,
 		}
 	}
 
@@ -58,7 +50,7 @@ func (h *Handler) GetProfile(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
-	userID, ok := auth.GetUserIDFromContext(r.Context())
+	userID, ok := r.Context().Value("userID").(int)
 	if !ok {
 		http.Error(w, `{"error": "User not authenticated"}`, http.StatusUnauthorized)
 		return
